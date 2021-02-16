@@ -14,12 +14,12 @@ import sys, irc.bot, requests
 class TwitchBot(irc.bot.SingleServerIRCBot):
     def __init__(self, username, client_id, token, channel):
         self.client_id = client_id
-        self.token = token
+        self.token = token.removeprefix("oauth:")
         self.channel = '#' + channel.lower()
 
         # Get the channel id, we will need this for v5 API calls
         url = 'https://api.twitch.tv/kraken/users?login=' + channel
-        headers = {'Client-ID': client_id, 'Accept': 'application/vnd.twitchtv.v5+json', 'Authorization': 'oauth:'+token}
+        headers = {'Client-ID': client_id, 'Accept': 'application/vnd.twitchtv.v5+json', 'Authorization': 'oauth:'+self.token}
         r = requests.get(url, headers=headers).json()
         self.channel_id = r['users'][0]['_id']
 
@@ -27,7 +27,7 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
         server = 'irc.chat.twitch.tv'
         port = 6667
         print('Connecting to ' + server + ' on port ' + str(port) + '...')
-        irc.bot.SingleServerIRCBot.__init__(self, [(server, port, 'oauth:'+token)], username, username)
+        irc.bot.SingleServerIRCBot.__init__(self, [(server, port, 'oauth:'+self.token)], username, username)
         
 
     def on_welcome(self, c, e):
