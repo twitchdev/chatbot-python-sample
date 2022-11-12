@@ -6,46 +6,62 @@ Licensed under the Apache License, Version 2.0 (the "License"). You may not use 
     http://aws.amazon.com/apache2.0/
 
 or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Modifications 2021 by RikiRC
+
+Adaptation to Helix API by TotallyMonica
 '''
 
-import sys
-import irc.bot
-import requests
+import sys, irc.bot, requests
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, username, client_id, token, channel):
+    def __init__(self, username, client_id, client_secret, token, channel):
         self.client_id = client_id
-        self.token = token
-        self.channel = '#' + channel
+        self.client_secret = client_secret
+        self.token = token.removeprefix("oauth:")
+        self.channel = '#' + channel.lower()
 
         # Get the channel id, we will need this for v5 API calls
-        url = 'https://api.twitch.tv/kraken/users?login=' + channel
-        headers = {'Client-ID': client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
+        body = {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'grant_type': 'client_credentials'
+        }
+        keys = requests.post('https://id.twitch.tv/oauth2/token', body).json()
+        url = 'https://api.twitch.tv/helix/users?login=' + channel
+        headers = {
+            'Client-ID': client_id,
+            'Authorization': 'Bearer ' + keys['access_token']
+        }
+
         r = requests.get(url, headers=headers).json()
-        self.channel_id = r['users'][0]['_id']
+
+        self.channel_id = r['data'][0]['id']
 
         # Create IRC bot connection
         server = 'irc.chat.twitch.tv'
         port = 6667
-        print 'Connecting to ' + server + ' on port ' + str(port) + '...'
-        irc.bot.SingleServerIRCBot.__init__(self, [(server, port, 'oauth:'+token)], username, username)
+        url = 'https://api.twitch.tv/helix/users?login=' + channel
+        print('Connecting to ' + server + ' on port ' + str(port) + '...')
+        irc.bot.SingleServerIRCBot.__init__(self, [(server, port, 'oauth:'+self.token)], username, username)
         
 
     def on_welcome(self, c, e):
-        print 'Joining ' + self.channel
+        print('Joining ' + self.channel)
 
         # You must request specific capabilities before you can use them
         c.cap('REQ', ':twitch.tv/membership')
         c.cap('REQ', ':twitch.tv/tags')
         c.cap('REQ', ':twitch.tv/commands')
         c.join(self.channel)
+        print('Joined ' + self.channel)
+        c.privmsg(self.channel, "Connected!")
 
     def on_pubmsg(self, c, e):
 
         # If a chat message starts with an exclamation point, try to run it as a command
         if e.arguments[0][:1] == '!':
             cmd = e.arguments[0].split(' ')[0][1:]
-            print 'Received command: ' + cmd
+            print('Received command: ' + cmd)
             self.do_command(e, cmd)
         return
 
@@ -57,14 +73,14 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
             url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
             headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
             r = requests.get(url, headers=headers).json()
-            c.privmsg(self.channel, r['display_name'] + ' is currently playing ' + r['game'])
+            c.privmsg(self.channel, str(r['display_name']) + ' is currently playing ' + str(r['game']))
 
         # Poll the API the get the current status of the stream
         elif cmd == "title":
             url = 'https://api.twitch.tv/kraken/channels/' + self.channel_id
             headers = {'Client-ID': self.client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
             r = requests.get(url, headers=headers).json()
-            c.privmsg(self.channel, r['display_name'] + ' channel title is currently ' + r['status'])
+            c.privmsg(self.channel, str(r['display_name']) + ' channel title is currently ' + str(r['status']))
 
         # Provide basic information to viewers for specific commands
         elif cmd == "raffle":
@@ -80,15 +96,16 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 def main():
     if len(sys.argv) != 5:
-        print("Usage: twitchbot <username> <client id> <token> <channel>")
+        print('Usage: twitchbot <username> <client id> <client secret> <token> <channel>')
         sys.exit(1)
 
-    username  = sys.argv[1]
-    client_id = sys.argv[2]
-    token     = sys.argv[3]
-    channel   = sys.argv[4]
+    username      = sys.argv[1]
+    client_id     = sys.argv[2]
+    client_secret = sys.argv[3]
+    token         = sys.argv[3]
+    channel       = sys.argv[4]
 
-    bot = TwitchBot(username, client_id, token, channel)
+    bot = TwitchBot(username, client_id, client_secret, token, channel)
     bot.start()
 
 if __name__ == "__main__":
