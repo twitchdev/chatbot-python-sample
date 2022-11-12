@@ -7,25 +7,40 @@ Licensed under the Apache License, Version 2.0 (the "License"). You may not use 
 
 or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 Modifications 2021 by RikiRC
+
+Adaptation to Helix API by TotallyMonica
 '''
 
 import sys, irc.bot, requests
 
 class TwitchBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, username, client_id, token, channel):
+    def __init__(self, username, client_id, client_secret, token, channel):
         self.client_id = client_id
+        self.client_secret = client_secret
         self.token = token.removeprefix("oauth:")
         self.channel = '#' + channel.lower()
 
         # Get the channel id, we will need this for v5 API calls
-        url = 'https://api.twitch.tv/kraken/users?login=' + channel
-        headers = {'Client-ID': client_id, 'Accept': 'application/vnd.twitchtv.v5+json'}
+        body = {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'grant_type': 'client_credentials'
+        }
+        keys = requests.post('https://id.twitch.tv/oauth2/token', body).json()
+        url = 'https://api.twitch.tv/helix/users?login=' + channel
+        headers = {
+            'Client-ID': client_id,
+            'Authorization': 'Bearer ' + keys['access_token']
+        }
+
         r = requests.get(url, headers=headers).json()
-        self.channel_id = r['users'][0]['_id']
+
+        self.channel_id = r['data'][0]['id']
 
         # Create IRC bot connection
         server = 'irc.chat.twitch.tv'
         port = 6667
+        url = 'https://api.twitch.tv/helix/users?login=' + channel
         print('Connecting to ' + server + ' on port ' + str(port) + '...')
         irc.bot.SingleServerIRCBot.__init__(self, [(server, port, 'oauth:'+self.token)], username, username)
         
@@ -81,15 +96,16 @@ class TwitchBot(irc.bot.SingleServerIRCBot):
 
 def main():
     if len(sys.argv) != 5:
-        print('Usage: twitchbot <username> <client id> <token> <channel>')
+        print('Usage: twitchbot <username> <client id> <client secret> <token> <channel>')
         sys.exit(1)
 
-    username  = sys.argv[1]
-    client_id = sys.argv[2]
-    token     = sys.argv[3]
-    channel   = sys.argv[4]
+    username      = sys.argv[1]
+    client_id     = sys.argv[2]
+    client_secret = sys.argv[3]
+    token         = sys.argv[3]
+    channel       = sys.argv[4]
 
-    bot = TwitchBot(username, client_id, token, channel)
+    bot = TwitchBot(username, client_id, client_secret, token, channel)
     bot.start()
 
 if __name__ == "__main__":
